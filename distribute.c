@@ -193,30 +193,45 @@ double** readbinary(char *filename,int numberofpoints,int dimension){
 
 }
 
+double **colmajor2rowmajor(double **points,int numberofpoints,int dimension){
+    double **retpoints = (double **) malloc(numberofpoints * sizeof(double *));
+    for(int i = 0 ; i < numberofpoints ; i++){
+        retpoints[i] = (double *) malloc(dimension * sizeof(double));
+    } 
+
+    for(int i = 0 ; i < numberofpoints ; i ++){
+        for(int j = 0 ; j < dimension ; j++){
+            retpoints[i][j] = points[j][i] ;
+        }
+    }
+
+    return retpoints;
+}
+
 // 0 -> train_image
 // 1 -> test image 
 int main(int argc, char **argv){
 
     //readbinary("mnist.txt",8,4);
     
-    int pivot ;
+    
     int pid,nproc;
     int numberofpoints = 8 ;
     int dimension = 4 ;
-    double operationpoint[numberofpoints];
+    
     
     MPI_Status status;
-   
 
     MPI_Init(&argc,&argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &pid);
     MPI_Comm_size(MPI_COMM_WORLD, &nproc);
 
-    int nprocs = nproc;
+    double oppoints[numberofpoints/nproc][dimension];
+    double pivot[dimension];
 
-    
     if(pid == 0 ){
-       double **points = (double **)malloc(dimension * sizeof(double*));
+        
+        double **points = (double **)malloc(dimension * sizeof(double*));
         for(int i = 0 ; i < dimension ; i++){
             points[i] = (double *) malloc(numberofpoints * sizeof(double)); 
         }
@@ -224,24 +239,81 @@ int main(int argc, char **argv){
         for(int i = 0 ; i < dimension ; i++){
             for(int j = 0 ; j < numberofpoints ; j++){
                 points[i][j] = (double)rand()/((double)RAND_MAX) ; 
-           
+        
             }
         }
+        
+        double **rowpoints = colmajor2rowmajor(points , numberofpoints , dimension);
         printTable(points,dimension,numberofpoints);
-        int pivot = rand() % (numberofpoints/nprocs+1) ;
+        printTable(rowpoints,numberofpoints,dimension);
+
+        for(int i = 0 ; i < numberofpoints/nproc ; i++){
+            for(int j = 0 ; j < dimension ;j++){
+                oppoints[i][j] = rowpoints[i][j];
+            }
+        }
+
+        printf("OPPERATION %d \n",pid);
+        for(int i = 0 ; i < numberofpoints/nproc ; i++){
+            for(int j = 0 ; j < dimension ; j++){
+                printf("%f ",oppoints[i][j]);
+            }
+            printf("\n");
+        }
 
         for(int i = 1 ; i < nproc ; i ++){
-            MPI_Send(&pivot,1,MPI_INT,i,55,MPI_COMM_WORLD);
+            for(int j = numberofpoints/nproc * i ; j < (numberofpoints/nproc)*(i+1) ; j++){
+                MPI_Send(rowpoints[j], dimension , MPI_DOUBLE,i,55,MPI_COMM_WORLD);
+            }
         }
-    
+
+        srand(time(0));
+        int pivotnumber = rand() % (numberofpoints/nproc);
+        //printf("PIVOT NUMBER IS %d ",pivotnumber);
+
+        for(int i = 0 ; i < dimension ; i++){
+            pivot[i] = oppoints[pivotnumber][i];
+        //    printf("%f ",pivot[i]);
+        }
+        
+        
+
     }
     else{
-        MPI_Recv(&pivot, 1, MPI_INT, MPI_ANY_SOURCE, 55, MPI_COMM_WORLD, &status);
-        printf("PIVOT %d FROM OPERATION %d ",pivot,pid);
-       }
-    // printTable(points,dimension,numberofpoints);
+        
+        for(int i = 0 ; i < numberofpoints/nproc ; i ++){
+            MPI_Recv(oppoints[i],dimension,MPI_DOUBLE,0,55,MPI_COMM_WORLD, &status);
+        }
+        
+        printf("OPPERATION %d \n",pid);
+        for(int i = 0 ; i < numberofpoints/nproc ; i++){
+            for(int j = 0 ; j < dimension ; j++){
+                printf("%f ",oppoints[i][j]);
+            }
+            printf("\n");
+        }
+
+       
+    }
+     
+    MPI_Bcast(pivot, dimension , MPI_DOUBLE, 0, MPI_COMM_WORLD);
     
-    
+    if(pid < nproc){
+        double distances[numberofpoints/nproc];
+        for(int i = 0 ; i < numberofpoints / nproc ; i++){
+            double distance = 0;
+            for(int j = 0  ; j < dimension ;j++){
+                 distance += pow(oppoints[i][j] - pivot[j],2) ;
+            }
+            distances[i] = distance ;
+        }
+        
+        for(int i = 0 ; i < numberofpoints / nproc ; i++){
+            printf("%f ",distances[i]);
+            
+        }
+        
+    }
  
 
     
