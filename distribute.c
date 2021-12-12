@@ -11,12 +11,14 @@
 //gcc -lm(link math.h)
 #include <math.h>
 #include <time.h>
+#include <stdint.h>
+#include "mpi.h"
 
 #define SWAP(a,b) temp=(a);(a)=(b);(b)=temp;
 //http://www.stat.cmu.edu/~ryantibs/median/quickselect.c
-float quickselect(float *arr, int n, int k) {
+double quickselect(double *arr, int n, int k) {
   unsigned long i,ir,j,l,mid;
-  float a,temp;
+  double a,temp;
 
   l=0;
   ir=n-1;
@@ -57,10 +59,12 @@ float quickselect(float *arr, int n, int k) {
 }
 
 typedef struct{
-    float *coordinates ;
+    double *coordinates ;
 } point;
 
-void printTable(float **table, int rows,int cols) {
+
+
+void printTable(double **table, int rows,int cols) {
 	for (int i = 0; i < rows; i++) {
 		for (int j = 0; j < cols; j++) {
 			printf(" %f ", table[i][j]);
@@ -71,10 +75,10 @@ void printTable(float **table, int rows,int cols) {
 	printf("\n");
 }
 
-void printpoints(point *points,int numberofpoints,int dimension){
+void printpoints(point *points,int numberofpoints,int dimension,int operation){
     
     for(int i = 0 ; i <numberofpoints ; i++){
-        printf("%d Point: ",i);
+        printf("%d Point from operation %d: ",i,operation);
         for(int j = 0 ; j <dimension; j++){
             printf("%f ", points[i].coordinates[j]);
         }
@@ -83,14 +87,14 @@ void printpoints(point *points,int numberofpoints,int dimension){
     printf("\n");
 }
 
-point *makepoints(float **pointsmatrix,int numberofpoints,int dimension){
+point *makepoints(double **pointsmatrix,int numberofpoints,int dimension){
 
     point *points = (point *) malloc(numberofpoints * sizeof(point));
 
     for(int i = 0 ; i < numberofpoints ; i++){
-        points[i].coordinates = (float *) malloc(dimension * sizeof(float));
+        points[i].coordinates = (double *) malloc(dimension * sizeof(double));
         for(int j = 0 ; j < dimension ; j ++){
-            points[i].coordinates[j] = pointsmatrix[i][j] ; 
+            points[i].coordinates[j] = pointsmatrix[j][i] ; 
         } 
     }
 
@@ -98,11 +102,11 @@ point *makepoints(float **pointsmatrix,int numberofpoints,int dimension){
 
 }
 
-float *distacefrompivot(point pivot,  int numberofpoints, int dimension, point *points){
-    float *distances = (float *) malloc(numberofpoints * sizeof(float));
+double *distacefrompivot(point pivot,  int numberofpoints, int dimension, point *points){
+    double *distances = (double *) malloc(numberofpoints * sizeof(double));
 
     for(int i = 0 ; i < numberofpoints ; i++){
-        float distance = 0 ;
+        double distance = 0 ;
         for(int j = 0  ; j < dimension ; j++){
             distance = pow((points[i].coordinates[j] - pivot.coordinates[j]),2) ;
 
@@ -118,7 +122,7 @@ float *distacefrompivot(point pivot,  int numberofpoints, int dimension, point *
 
 }
 
-int smallerthanmedian(float median,point *points,float *distances,int numberofpoints){
+int smallerthanmedian(double median,point *points,double *distances,int numberofpoints){
     int smaller = 0 ; 
     // for topically function
     for(int i = 0 ; i < numberofpoints ;i++ ){
@@ -155,68 +159,126 @@ point **partionpoints(point *pointsmatrix,int numberofpoints,int numberofoperati
         partpoints[i] = (point *) malloc(pointsperoperation * sizeof(point));
     }
 
-    for(int i = 0 ; i < numberofpoints ; i++){
-        for(int j = 0 ; j  < numberofoperations ; j++){
-            for(int k = 0 ; k < pointsperoperation ; k++){
-                partpoints[j][k] = pointsmatrix[i];
-            }
+    int currentpoint = 0 ; 
+    for(int j = 0 ; j  < numberofoperations ; j++){
+        for(int k = 0 ; k < pointsperoperation ; k++){
+            partpoints[j][k] = pointsmatrix[currentpoint];
+            currentpoint++;
         }
     }
+
 
     return partpoints ;
 }
 
+double** readbinary(char *filename,int numberofpoints,int dimension){
+    FILE* file = fopen(filename,"rb");
+    double buffer[numberofpoints];
 
-int main(int argc, char **argv){
-
-    
-    int numberofpoints = 8 ;
-    int dimension = 4 ;
-    int numberofoperations = 2 ;
-
-    float **points = (float **)malloc(numberofpoints * sizeof(float*));
-    for(int i = 0 ; i < numberofpoints ; i++){
-       points[i] = (float *) malloc(dimension * sizeof(float)); 
-    };
-
-    for(int i = 0 ; i < numberofpoints ; i++){
-        for(int j = 0 ; j < dimension ; j++){
-            points[i][j] = (float)rand()/((float)RAND_MAX) ; 
-        }
+    double **points = (double **) malloc(dimension * sizeof(double*));
+    for(int i = 0 ; i < dimension ; i++){
+        points[i] = (double *) malloc(numberofpoints * sizeof(double));
     }
 
-    printTable(points,numberofpoints,dimension);
-    
-    
-    point *finalpoints = makepoints(points,numberofpoints,dimension);
-    point **operationpoints = partionpoints(finalpoints,numberofpoints,numberofoperations);
+    for(int i = 0 ; i < dimension ; i++){
+        fread(buffer,sizeof(double),numberofpoints,file);
+        for(int j = 0 ; j < numberofpoints ; j++){
+            points[i][j] = buffer[j];
+        }
+        //need to change line in the here 
+        puts("");
+    }
 
-    printpoints(finalpoints,numberofpoints,dimension);
+    return points ;
 
+}
+
+// 0 -> train_image
+// 1 -> test image 
+int main(int argc, char **argv){
+
+    //readbinary("mnist.txt",8,4);
+    
+    int pivot ;
+    int pid,nproc;
+    int numberofpoints = 8 ;
+    int dimension = 4 ;
+    double operationpoint[numberofpoints];
+    
+    MPI_Status status;
    
 
-    int pivotnumber = rand() % (numberofpoints+1) ; 
+    MPI_Init(&argc,&argv);
+    MPI_Comm_rank(MPI_COMM_WORLD, &pid);
+    MPI_Comm_size(MPI_COMM_WORLD, &nproc);
 
-    point pivot = finalpoints[pivotnumber] ; 
-    printf("THE PIVOT IS : %d \n" , pivotnumber);
+    int nprocs = nproc;
+
+    
+    if(pid == 0 ){
+       double **points = (double **)malloc(dimension * sizeof(double*));
+        for(int i = 0 ; i < dimension ; i++){
+            points[i] = (double *) malloc(numberofpoints * sizeof(double)); 
+        }
+
+        for(int i = 0 ; i < dimension ; i++){
+            for(int j = 0 ; j < numberofpoints ; j++){
+                points[i][j] = (double)rand()/((double)RAND_MAX) ; 
+           
+            }
+        }
+        printTable(points,dimension,numberofpoints);
+        int pivot = rand() % (numberofpoints/nprocs+1) ;
+
+        for(int i = 1 ; i < nproc ; i ++){
+            MPI_Send(&pivot,1,MPI_INT,i,55,MPI_COMM_WORLD);
+        }
+    
+    }
+    else{
+        MPI_Recv(&pivot, 1, MPI_INT, MPI_ANY_SOURCE, 55, MPI_COMM_WORLD, &status);
+        printf("PIVOT %d FROM OPERATION %d ",pivot,pid);
+       }
+    // printTable(points,dimension,numberofpoints);
+    
+    
+ 
+
+    
+    // int pivotnumber = rand() % (numberofpoints/nprocs+1);
+    //     point pivot = operationpoints[0][pivotnumber] ;
+    //     printf("THE PIVOT IS : %d \n" , pivotnumber);
+    // point pivot = operationpoints[0][pivotnumber] ;
+   /* point *points1 = operationpoints[0];
+    point *points2 = operationpoints[1];
+
+    printpoints(points1,numberofpoints/nprocs,dimension,0);
+    printpoints(points2,numberofpoints/nprocs,dimension,1);
+   
+
+     
+
+     
+    
     printf("\n");
 
-    float *distances = distacefrompivot(pivot,numberofpoints,dimension,finalpoints);
+    double *distances = distacefrompivot(pivot,numberofpoints,dimension,finalpoints);
     printf("\n");
 
-    // float **partdistances = (float **) malloc(numberofoperations * sizeof(float*));
-    // for(int i = 0 ; i < numberofoperations ; i++){
-    //     partdistances[i] = (float *) malloc((numberofpoints/numberofoperations) * sizeof(float));
-    //     partdistances[i] = distacefrompivot(pivot,numberofpoints/numberofoperations,dimension,operationpoints[i]);
-    // }
+    double **partdistances = (double **) malloc(nprocs * sizeof(double*));
+    for(int i = 0 ; i < nprocs ; i++){
+        partdistances[i] = (double *) malloc((numberofpoints/nprocs) * sizeof(double));
+        partdistances[i] = distacefrompivot(pivot,numberofpoints/nprocs,dimension,operationpoints[i]);
+    }*/
 
 
-    float median = (quickselect(distances,numberofpoints,numberofpoints/2)+quickselect(distances,numberofpoints,numberofpoints/2-1))/2;
-    printf("median is %f \n",median);
+    // double median = (quickselect(distances,numberofpoints,numberofpoints/2)+quickselect(distances,numberofpoints,numberofpoints/2-1))/2;
+    // printf("median is %f \n",median);
 
-    int smaller = smallerthanmedian(median,finalpoints,distances,numberofpoints);
-    printf("\n");
+    // int smaller = smallerthanmedian(median,finalpoints,distances,numberofpoints);
+    // printf("\n");
 
+    MPI_Finalize();
    
     return 0 ;
 }
