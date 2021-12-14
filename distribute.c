@@ -216,11 +216,12 @@ int main(int argc, char **argv){
     
     
     int pid,nproc;
-    int numberofpoints = 8 ;
+    int numberofpoints = 16 ;
     int dimension = 4 ;
     
     
     MPI_Status status;
+    
 
     MPI_Init(&argc,&argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &pid);
@@ -253,7 +254,7 @@ int main(int argc, char **argv){
             }
         }
 
-        printf("OPPERATION %d \n",pid);
+        printf("STARTING POINTS OPPERATION %d \n",pid);
         for(int i = 0 ; i < numberofpoints/nproc ; i++){
             for(int j = 0 ; j < dimension ; j++){
                 printf("%f ",oppoints[i][j]);
@@ -285,7 +286,7 @@ int main(int argc, char **argv){
             MPI_Recv(oppoints[i],dimension,MPI_DOUBLE,0,55,MPI_COMM_WORLD, &status);
         }
         
-        printf("OPPERATION %d \n",pid);
+        printf("STARTING POINTS OPPERATION %d \n",pid);
         for(int i = 0 ; i < numberofpoints/nproc ; i++){
             for(int j = 0 ; j < dimension ; j++){
                 printf("%f ",oppoints[i][j]);
@@ -297,9 +298,10 @@ int main(int argc, char **argv){
     }
      
     MPI_Bcast(pivot, dimension , MPI_DOUBLE, 0, MPI_COMM_WORLD);
-    
-    if(pid < nproc){
-        double distances[numberofpoints/nproc];
+
+    double distances[numberofpoints/nproc];
+    //if(pid < nproc){
+       
         for(int i = 0 ; i < numberofpoints / nproc ; i++){
             double distance = 0;
             for(int j = 0  ; j < dimension ;j++){
@@ -309,46 +311,157 @@ int main(int argc, char **argv){
         }
         
         for(int i = 0 ; i < numberofpoints / nproc ; i++){
-            printf("%f ",distances[i]);
+            printf("%f from PID : %d ",distances[i],pid);
             
         }
-        
+//  }
+
+    printf("\n");
+    printf("\n");
+
+    double alldistances[numberofpoints];
+    MPI_Gather(distances, numberofpoints/nproc , MPI_DOUBLE , alldistances , numberofpoints/nproc , MPI_DOUBLE , 0 , MPI_COMM_WORLD );
+
+    double median ; 
+
+    if(pid == 0){
+        median = (quickselect(alldistances, numberofpoints,numberofpoints/2) + quickselect(alldistances, numberofpoints, numberofpoints/2 - 1))/2;
     }
- 
 
-    
-    // int pivotnumber = rand() % (numberofpoints/nprocs+1);
-    //     point pivot = operationpoints[0][pivotnumber] ;
-    //     printf("THE PIVOT IS : %d \n" , pivotnumber);
-    // point pivot = operationpoints[0][pivotnumber] ;
-   /* point *points1 = operationpoints[0];
-    point *points2 = operationpoints[1];
+    MPI_Bcast(&median, 1 , MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    if(pid == 0)
+    printf("MEDIAN IS %f \n",median);
 
-    printpoints(points1,numberofpoints/nprocs,dimension,0);
-    printpoints(points2,numberofpoints/nprocs,dimension,1);
-   
+    //distributebymedian
+    int smaller = 0 ;
+    for(int i = 0 ; i < numberofpoints /nproc ;i++){
+        if(distances[i] < median)
+            smaller++ ;
+    }
+    double tmp ;
+    double distancetmp;
+    for(int i = 0 ; i < numberofpoints/nproc - 1 ; i++){
+        
+        if(distances[i] > median){
+            for(int j = i + 1; j < numberofpoints/nproc ; j++){
+                if(distances[j] < median){
+                    
+                    distancetmp = distances[i];
+                    distances[i] = distances[j];
+                    distances[j] = distancetmp; 
+                    //SWAP(distance[i],distances[j]);
+                    for(int k = 0 ; k < dimension ; k++){
+                        
+                        tmp = oppoints[i][k];
+                        oppoints[i][k] = oppoints[j][k];
+                        oppoints[j][k] = tmp ;
+                        //SWAP(oppoints[i][k],oppoints[j][k]);
+                        
+                    }
+                    break ;
+                }
+                
+            }
+        }
+    }
 
-     
+    if(pid < nproc/2){
+        int bigger = numberofpoints/nproc - smaller ;
+        smaller = bigger ;
+    }
+    //  printf("POINTS AFTER SMALLER OPPERATION %d \n",pid);
+    // for(int i = 0 ; i < numberofpoints/nproc ; i++){
+    //     for(int j = 0 ; j < dimension ; j++){
+    //         printf("%f ",oppoints[i][j]);
+    //     }
+    //     printf("\n");
+    // }
 
-     
-    
-    printf("\n");
-
-    double *distances = distacefrompivot(pivot,numberofpoints,dimension,finalpoints);
-    printf("\n");
-
-    double **partdistances = (double **) malloc(nprocs * sizeof(double*));
-    for(int i = 0 ; i < nprocs ; i++){
-        partdistances[i] = (double *) malloc((numberofpoints/nprocs) * sizeof(double));
-        partdistances[i] = distacefrompivot(pivot,numberofpoints/nprocs,dimension,operationpoints[i]);
-    }*/
-
-
-    // double median = (quickselect(distances,numberofpoints,numberofpoints/2)+quickselect(distances,numberofpoints,numberofpoints/2-1))/2;
-    // printf("median is %f \n",median);
-
-    // int smaller = smallerthanmedian(median,finalpoints,distances,numberofpoints);
+    //  for(int i = 0 ; i < numberofpoints / nproc ; i++){
+    //         printf("%f from PID : %d ",distances[i],pid);
+            
+    // }
     // printf("\n");
+    //printf("SMALLER  FROM OPPERATION %d : %d \n ",pid,smaller);
+
+    int smalls[nproc];
+    MPI_Gather(&smaller, 1 , MPI_INT , smalls , 1 , MPI_INT , 0 , MPI_COMM_WORLD );
+    
+    int  exchangetable[nproc/2][nproc/2];
+
+    if(pid ==0){
+        for(int i = 0 ; i < nproc ; i++){
+            printf("%d ",smalls[i]);   
+        }
+        printf("\n");
+
+        for(int i = 0 ; i < nproc/2 ; i++){
+            for(int j = nproc/2 ; j < nproc ; j++){
+                exchangetable[i][j-nproc/2] = 0;
+                if(smalls[i] > 0 ){
+                    if(smalls[j] > 0){
+                        if(smalls[i] >= smalls[j]){
+                            exchangetable[i][j - nproc/2] = smalls[j];
+                            smalls[i] -= smalls[j];
+                            smalls[j] =0 ;
+
+                        }
+                        else if(smalls[i] < smalls[j]){
+                            exchangetable[i][j - nproc/2] = smalls[i] ;
+                            smalls[j] -=smalls[i];
+                            smalls[i] =0 ;
+                        }
+
+                    }
+                }
+            }
+        }
+
+        for(int i = 0 ; i < nproc/2 ; i++){
+            for(int j = 0 ; j < nproc/2 ; j++){
+                printf("%d ", exchangetable[i][j]);
+            }
+            printf("\n");
+        }
+    }
+
+    MPI_Bcast(exchangetable, pow(nproc/2,2) , MPI_INT, 0, MPI_COMM_WORLD);
+
+    if(pid < nproc/2){
+        int counter = numberofpoints/nproc - 1 ;
+        for(int i = 0 ; i < nproc/2 ; i++){
+            if(exchangetable[pid][i] > 0){
+                for(int j = 0 ; j < exchangetable[pid][i] ;j++){
+                    MPI_Sendrecv(oppoints[counter] , dimension ,MPI_DOUBLE ,i+nproc/2,55,oppoints[counter],dimension,MPI_DOUBLE,i+nproc/2,55,MPI_COMM_WORLD,&status);
+                    counter--;
+                }
+            }
+        }
+    }
+    else{ 
+        int counter =0;
+        for(int i = 0 ; i < nproc/2 ; i++){
+            if(exchangetable[i][pid - nproc/2] > 0){
+                for(int j = 0 ; j < exchangetable[i][pid - nproc/2] ;j++){
+                    MPI_Sendrecv(oppoints[counter] , dimension ,MPI_DOUBLE , i ,55,oppoints[counter],dimension,MPI_DOUBLE,i,55,MPI_COMM_WORLD,&status);
+                    counter++;
+                }
+            }
+        }
+
+    }
+   
+    printf("FINAL POINTS OPPERATION %d \n",pid);
+    for(int i = 0 ; i < numberofpoints/nproc ; i++){
+        for(int j = 0 ; j < dimension ; j++){
+            printf("%f ",oppoints[i][j]);
+        }
+        printf("\n");
+    }
+
+    // MPI_Bcast(exchangetable, pow(nproc/2 ,2) , MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    
+    
 
     MPI_Finalize();
    
