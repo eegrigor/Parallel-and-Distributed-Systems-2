@@ -6,6 +6,6 @@
 
 module load gcc openmpi
 
-mpicc retroactive.c -lm -o mpi
+mpicc distribute.c -lm -o mpi
 
 srun ./mpi
